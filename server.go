@@ -1,12 +1,10 @@
-// Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -25,6 +23,74 @@ const (
 	// Maximum message size allowed from peer.
 	maxMessageSize = 512
 )
+
+func main() {
+	go h.run()
+	serverMap := make(map[int]*http.ServeMux)
+
+	for i := 8001; i <= 8050; i++ {
+		port := i
+		serverMap[port] = http.NewServeMux()
+		serverMap[port].HandleFunc("/ws", serveWs)
+		go func(server *http.ServeMux, port int) {
+			fmt.Println("Listening for websocket connections on port " + strconv.Itoa(port))
+			err := http.ListenAndServe("localhost:"+strconv.Itoa(port), server)
+			if err != nil {
+				log.Fatal("ListenAndServe: ", err)
+			}
+		}(serverMap[port], port)
+	}
+
+	quit := make(chan bool)
+	<-quit
+
+}
+
+// hub maintains the set of active connections and broadcasts messages to the
+// connections.
+type hub struct {
+	// Registered connections.
+	connections map[*connection]bool
+
+	// Inbound messages from the connections.
+	broadcast chan []byte
+
+	// Register requests from the connections.
+	register chan *connection
+
+	// Unregister requests from connections.
+	unregister chan *connection
+}
+
+var h = hub{
+	broadcast:   make(chan []byte),
+	register:    make(chan *connection),
+	unregister:  make(chan *connection),
+	connections: make(map[*connection]bool),
+}
+
+func (h *hub) run() {
+	for {
+		select {
+		case c := <-h.register:
+			h.connections[c] = true
+		case c := <-h.unregister:
+			if _, ok := h.connections[c]; ok {
+				delete(h.connections, c)
+				close(c.send)
+			}
+		case m := <-h.broadcast:
+			for c := range h.connections {
+				select {
+				case c.send <- m:
+				default:
+					close(c.send)
+					delete(h.connections, c)
+				}
+			}
+		}
+	}
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -92,10 +158,6 @@ func (c *connection) writePump() {
 
 // serverWs handles websocket requests from the peer.
 func serveWs(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-	w.Header().Set("Access-Control-Allow-Methods", "POST,PUT,GET,HEAD,DELETE,OPTIONS")
-	w.Header().Set("Access-Control-Max-Age", "1728000")
 
 	if r.Method != "GET" {
 		http.Error(w, "Method not allowed", 405)
