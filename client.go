@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"strconv"
 
 	"golang.org/x/net/websocket"
 )
@@ -29,6 +30,7 @@ func main() {
 			case ws := <-connectionChan:
 				wsMap[i] = ws
 				i++
+				fmt.Println("Connection " + strconv.Itoa(i))
 			}
 		}
 	}()
