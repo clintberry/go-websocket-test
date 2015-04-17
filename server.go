@@ -34,7 +34,7 @@ func main() {
 		serverMap[port].HandleFunc("/ws", serveWs)
 		go func(server *http.ServeMux, port int) {
 			fmt.Println("Listening for websocket connections on port " + strconv.Itoa(port))
-			err := http.ListenAndServe("localhost:"+strconv.Itoa(port), server)
+			err := http.ListenAndServe(":"+strconv.Itoa(port), server)
 			if err != nil {
 				log.Fatal("ListenAndServe: ", err)
 			}
@@ -74,6 +74,7 @@ func (h *hub) run() {
 		select {
 		case c := <-h.register:
 			h.connections[c] = true
+			fmt.Println("Number of connections: " + strconv.Itoa(len(h.connections)))
 		case c := <-h.unregister:
 			if _, ok := h.connections[c]; ok {
 				delete(h.connections, c)
